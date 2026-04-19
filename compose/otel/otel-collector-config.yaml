@@ -1,0 +1,108 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  NexusPlatform · OpenTelemetry Collector · single telemetry hub
+# ──────────────────────────────────────────────────────────────────────────────
+#  Topology:
+#
+#      apps ──OTLP──▶ otel-collector ──▶ prometheus  (metrics, via scrape)
+#                                   ├──▶ jaeger     (traces, OTLP)
+#                                   └──▶ seq        (logs, OTLP)
+#
+#  All app code emits OTLP only. Backend choice is a config change here — apps
+#  never learn the names "Prometheus", "Jaeger", or "Seq". See ADR-0003.
+# ──────────────────────────────────────────────────────────────────────────────
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Collector's own runtime metrics — scraped by the prometheus exporter below.
+  prometheus/self:
+    config:
+      scrape_configs:
+        - job_name: otel-collector
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["127.0.0.1:8888"]
+
+processors:
+  batch:
+    send_batch_size: 1024
+    timeout: 5s
+    send_batch_max_size: 2048
+
+  memory_limiter:
+    check_interval: 2s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  # Attach environment tags so dashboards & queries can filter by deployment.
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: local
+        action: upsert
+      - key: service.namespace
+        value: nexus
+        action: upsert
+
+exporters:
+  # ─── Metrics → Prometheus (pull model; Prom scrapes :8889) ──────────────────
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # ─── Traces → Jaeger v2 (OTLP-native, no jaeger exporter needed) ────────────
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # ─── Logs → Seq (OTLP ingest on /ingest/otlp) ──────────────────────────────
+  otlphttp/seq:
+    endpoint: http://seq:80/ingest/otlp
+    tls:
+      insecure: true
+
+  # Dev aid: dump a sample of everything to collector stdout at low verbosity.
+  debug:
+    verbosity: basic
+    sampling_initial: 2
+    sampling_thereafter: 500
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, zpages]
+
+  telemetry:
+    logs:
+      level: info
+      encoding: json
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/jaeger, debug]
+
+    metrics:
+      receivers: [otlp, prometheus/self]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp/seq, debug]

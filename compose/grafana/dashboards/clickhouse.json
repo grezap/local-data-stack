@@ -1,0 +1,52 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "uid": "nexus-clickhouse",
+  "title": "NexusPlatform — ClickHouse",
+  "tags": ["nexus", "clickhouse"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Queries / sec",
+      "id": 1,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(ClickHouseProfileEvents_Query[1m])", "refId": "A", "legendFormat": "queries" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Inserted rows / sec",
+      "id": 2,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(ClickHouseProfileEvents_InsertedRows[1m])", "refId": "A", "legendFormat": "rows" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Active connections",
+      "id": 3,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "ClickHouseMetrics_TCPConnection", "refId": "A" } ]
+    },
+    {
+      "type": "stat",
+      "title": "Memory tracked (bytes)",
+      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [ { "expr": "ClickHouseMetrics_MemoryTracking", "refId": "A" } ]
+    }
+  ]
+}

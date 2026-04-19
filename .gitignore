@@ -1,0 +1,18 @@
+# ── OS / editor cruft ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+*.sublime-*
+
+# ── Local-only environment ───────────────────────────────────────────────────
+compose/.env
+compose/**/*.local.yml
+compose/**/*.local.yaml
+
+# ── Scratch / runtime data (should live in volumes, not bind mounts) ─────────
+data/
+logs/
+*.log

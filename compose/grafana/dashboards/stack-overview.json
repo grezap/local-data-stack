@@ -1,0 +1,67 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "uid": "nexus-stack-overview",
+  "title": "NexusPlatform — Stack Overview",
+  "tags": ["nexus", "overview"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-15m", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "OTel Collector — uptime (s)",
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "process_uptime_seconds{job=\"otel-collector-self\"}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Spans exported / sec (by exporter)",
+      "id": 2,
+      "gridPos": { "h": 8, "w": 12, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (exporter) (rate(otelcol_exporter_sent_spans[1m]))", "refId": "A", "legendFormat": "{{exporter}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Metric points exported / sec",
+      "id": 3,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (exporter) (rate(otelcol_exporter_sent_metric_points[1m]))", "refId": "A", "legendFormat": "{{exporter}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Log records exported / sec",
+      "id": 4,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum by (exporter) (rate(otelcol_exporter_sent_log_records[1m]))", "refId": "A", "legendFormat": "{{exporter}}" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Prometheus TSDB head series",
+      "id": 5,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [ { "expr": "prometheus_tsdb_head_series", "refId": "A" } ]
+    }
+  ]
+}

@@ -1,0 +1,279 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  NexusPlatform · local-data-stack · v0.1.0
+#  ──────────────────────────────────────────────────────────────────────────────
+#  A reproducible, observable, single-host data + streaming + observability
+#  stack. Designed as the local-development substrate for every NexusPlatform
+#  application project.
+#
+#  Usage:
+#    make up              # full stack (default profile)
+#    make up P=minimal    # kafka + schema-registry + clickhouse only
+#    make down
+#    make health          # probe every service healthcheck
+#
+#  All UIs bind to 127.0.0.1 only.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: nexus-local
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Networks & volumes
+# ──────────────────────────────────────────────────────────────────────────────
+
+networks:
+  nexus:
+    name: nexus
+    driver: bridge
+
+volumes:
+  kafka-data:         { name: nexus-kafka-data }
+  clickhouse-data:    { name: nexus-clickhouse-data }
+  clickhouse-logs:    { name: nexus-clickhouse-logs }
+  redis-data:         { name: nexus-redis-data }
+  prometheus-data:    { name: nexus-prometheus-data }
+  grafana-data:       { name: nexus-grafana-data }
+  jaeger-data:        { name: nexus-jaeger-data }
+  seq-data:           { name: nexus-seq-data }
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Reusable fragments (YAML anchors)
+# ──────────────────────────────────────────────────────────────────────────────
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  Services
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ─── Streaming ───────────────────────────────────────────────────────────────
+
+  kafka:
+    image: apache/kafka:${KAFKA_VERSION:-3.8.1}
+    container_name: nexus-kafka
+    profiles: ["minimal", "streaming", "full"]
+    <<: *default-restart
+    logging: *default-logging
+    networks: [nexus]
+    ports:
+      - "127.0.0.1:9094:9094"    # external host client listener
+    environment:
+      # KRaft: combined broker + controller mode, single node
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_LISTENERS: "CONTROLLER://:9093,INTERNAL://:9092,EXTERNAL://:9094"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:9092,EXTERNAL://localhost:9094"
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-nexus-local-000000000001}
+      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:${SCHEMA_REGISTRY_VERSION:-7.7.1}
+    container_name: nexus-schema-registry
+    profiles: ["streaming", "full"]
+    <<: *default-restart
+    logging: *default-logging
+    networks: [nexus]
+    depends_on:
+      kafka: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8081"
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "PLAINTEXT://kafka:9092"
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC: _schemas
+      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: backward
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/subjects >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ─── Analytical / operational data ───────────────────────────────────────────
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-24.8.7.41}
+    container_name: nexus-clickhouse
+    profiles: ["minimal", "analytics", "full"]
+    <<: *default-restart
+    logging: *default-logging
+    networks: [nexus]
+    ports:
+      - "127.0.0.1:8123:8123"    # HTTP
+      - "127.0.0.1:9000:9000"    # native TCP
+    environment:
+      CLICKHOUSE_DB: nexus
+      CLICKHOUSE_USER: nexus
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-nexus-dev}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q Ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  redis:
+    image: redis:${REDIS_VERSION:-7.4-alpine}
+    container_name: nexus-redis
+    profiles: ["minimal", "analytics", "full"]
+    <<: *default-restart
+    logging: *default-logging
+    networks: [nexus]
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # ─── Observability ───────────────────────────────────────────────────────────
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_VERSION:-0.113.0}
+    container_name: nexus-otel-collector
+    profiles: ["observability", "full"]
+    <<: *default-restart
+    logging: *default-logging
+    networks: [nexus]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"    # OTLP gRPC
+      - "127.0.0.1:4318:4318"    # OTLP HTTP
+      - "127.0.0.1:8888:8888"    # collector self-metrics
+      - "127.0.0.1:8889:8889"    # prometheus exporter scrape target
+    depends_on:
+      jaeger:     { condition: service_started }
+      seq:        { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:13133/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.0.1}
+    container_name: nexus-prometheus
+    profiles: ["observability", "full"]
+    <<: *default-restart
+    logging: *default-logging
+    networks: [nexus]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"
+      - "--web.enable-remote-write-receiver"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy | grep -q Healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_VERSION:-11.3.0}
+    container_name: nexus-grafana
+    profiles: ["observability", "full"]
+    <<: *default-restart
+    logging: *default-logging
+    networks: [nexus]
+    depends_on:
+      prometheus: { condition: service_healthy }
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  jaeger:
+    # Jaeger v2 is OTel-native — removes the need for a separate jaeger-agent.
+    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.0.0}
+    container_name: nexus-jaeger
+    profiles: ["observability", "full"]
+    <<: *default-restart
+    logging: *default-logging
+    networks: [nexus]
+    volumes:
+      - jaeger-data:/badger
+    environment:
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+    ports:
+      - "127.0.0.1:16686:16686"  # Jaeger UI
+
+  seq:
+    image: datalust/seq:${SEQ_VERSION:-2024.3}
+    container_name: nexus-seq
+    profiles: ["observability", "full"]
+    <<: *default-restart
+    logging: *default-logging
+    networks: [nexus]
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINPASSWORDHASH: ${SEQ_ADMIN_PASSWORD_HASH:-}
+    volumes:
+      - seq-data:/data
+    ports:
+      - "127.0.0.1:5341:80"      # UI + ingest

@@ -1,0 +1,117 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  CI · local-data-stack
+# ──────────────────────────────────────────────────────────────────────────────
+#  Gates every change with four independent checks:
+#    1. lint        — compose file is schema-valid and renders cleanly
+#    2. smoke       — bring full stack up, run end-to-end smoke test, tear down
+#    3. codeql      — static analysis for the shell/JS we ship
+#    4. trivy       — vulnerability scan of every pinned image
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"   # weekly, catches CVE drift even without commits
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  lint:
+    name: compose lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose file
+        run: |
+          cp compose/.env.example compose/.env
+          docker compose --project-directory compose \
+            -f compose/docker-compose.yml --profile full config -q
+      - name: yamllint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          config_data: |
+            extends: default
+            rules:
+              line-length: disable
+              document-start: disable
+              truthy: { check-keys: false }
+
+  smoke:
+    name: end-to-end smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare environment
+        run: cp compose/.env.example compose/.env
+      - name: Bring up full stack
+        run: make up P=full
+      - name: Wait for healthy
+        run: |
+          for i in {1..60}; do
+            bad=$(docker ps --format '{{.Names}} {{.Status}}' | grep -c '(unhealthy)') || true
+            pending=$(docker ps --format '{{.Names}} {{.Status}}' | grep -c 'health: starting') || true
+            if [[ "$bad" == 0 && "$pending" == 0 ]]; then echo "all healthy"; exit 0; fi
+            echo "waiting... ($i) pending=$pending unhealthy=$bad"
+            sleep 5
+          done
+          echo "stack did not reach healthy" && docker ps && exit 1
+      - name: Run smoke test
+        run: make smoke
+      - name: Dump logs on failure
+        if: failure()
+        run: make logs || true
+      - name: Tear down
+        if: always()
+        run: make nuke
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+      - uses: github/codeql-action/analyze@v3
+
+  trivy:
+    name: trivy image scan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - apache/kafka:3.8.1
+          - confluentinc/cp-schema-registry:7.7.1
+          - clickhouse/clickhouse-server:24.8.7.41
+          - redis:7.4-alpine
+          - otel/opentelemetry-collector-contrib:0.113.0
+          - prom/prometheus:v3.0.1
+          - grafana/grafana:11.3.0
+          - jaegertracing/jaeger:2.0.0
+          - datalust/seq:2024.3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan ${{ matrix.image }}
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: table
+          exit-code: "0"   # report only; tighten to "1" after baseline is clean
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true

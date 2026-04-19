@@ -1,0 +1,60 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  Grafana datasources · provisioned (dashboards-as-code)
+# ──────────────────────────────────────────────────────────────────────────────
+#  Grafana auto-loads this on startup; no click-ops required. Any change lands
+#  via PR + compose restart. See ADR-0005 (dashboards-as-code).
+# ──────────────────────────────────────────────────────────────────────────────
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    uid: prometheus
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: 3.0.1
+
+  - name: Jaeger
+    type: jaeger
+    access: proxy
+    uid: jaeger
+    url: http://jaeger:16686
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: seq
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
+
+  - name: Seq
+    type: grafana-opensearch-datasource
+    access: proxy
+    uid: seq
+    url: http://seq:80
+    # Seq exposes an OpenSearch-compatible endpoint at /api/elastic-v8.
+    jsonData:
+      database: "[logs-]YYYY.MM.DD"
+      flavor: opensearch
+      version: "2.11.0"
+      timeField: "@timestamp"
+
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    access: proxy
+    uid: clickhouse
+    url: http://clickhouse:8123
+    jsonData:
+      defaultDatabase: nexus
+      port: 8123
+      server: clickhouse
+      username: nexus
+      protocol: http
+    secureJsonData:
+      password: ${CLICKHOUSE_PASSWORD:-nexus-dev}
