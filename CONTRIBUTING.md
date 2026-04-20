@@ -41,7 +41,7 @@ Both paths must pass locally before pushing. CI re-runs `validate` + `smoke` on 
 The repo is expected to work identically on Linux, macOS, WSL2, and Windows 11 native. When adding scripts or files, keep these in mind:
 
 - **Shell scripts (`*.sh`)** — target `bash` / POSIX. Always add a matching verb in `run.ps1` if the script is part of the developer contract.
-- **PowerShell scripts (`*.ps1`)** — target PowerShell 7+. Use `$ErrorActionPreference = 'Stop'`. Avoid aliases (`%`, `?`, `ls`) — use full cmdlet names.
+- **PowerShell scripts (`*.ps1`)** — target PowerShell 5.1+ (work on 7 too). Use `$ErrorActionPreference = 'Stop'`. Avoid aliases (`%`, `?`, `ls`) — use full cmdlet names. **Keep `.ps1` files pure ASCII** — no em-dashes, box-drawing, or smart quotes. Windows PowerShell 5.1 reads `.ps1` as ANSI unless the file has a UTF-8 BOM, and non-ASCII bytes corrupt the parser's string boundaries. CI check: `python -c "import sys; [sys.exit(1) for b in open(p,'rb').read() if b>127]"` (or equivalent) before commit.
 - **Line endings** — enforced by `.gitattributes`. `*.sh` is LF; `*.ps1` is CRLF; YAML/JSON/Markdown/SQL is LF. Don't override.
 - **Paths in docs** — when both platforms are involved, show both (POSIX `make foo` / PowerShell `.\run.ps1 foo`).
 

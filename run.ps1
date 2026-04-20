@@ -1,12 +1,15 @@
 <#
 .SYNOPSIS
-    NexusPlatform · local-data-stack · PowerShell task runner
+    NexusPlatform :: local-data-stack :: PowerShell task runner
     (Windows-native equivalent of the POSIX Makefile)
 
 .DESCRIPTION
     Provides the same developer contract as `make` without requiring WSL2,
     bash, jq, awk, or column. Every verb dispatches to `docker compose`
     with the correct project directory and profile.
+
+    This file is pure ASCII so it parses correctly under both Windows
+    PowerShell 5.1 (ANSI-default) and PowerShell 7+ (UTF-8 default).
 
 .PARAMETER Task
     One of: help | up | down | nuke | restart | pull | ps | logs | health
@@ -26,8 +29,8 @@
     .\run.ps1 smoke
 
 .NOTES
-    Requires: PowerShell 7+ and Docker Desktop with WSL2 backend enabled.
-    Run from the repository root.
+    Requires: PowerShell 5.1+ (PS 7+ recommended) and Docker Desktop
+    with WSL2 backend enabled. Run from the repository root.
 #>
 [CmdletBinding()]
 param(
@@ -43,9 +46,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$PSNativeCommandUseErrorActionPreference = $true
+# PS 7.2+ only; harmless no-op on earlier versions.
+try { $PSNativeCommandUseErrorActionPreference = $true } catch { }
 
-# ─── Paths & constants ───────────────────────────────────────────────────────
+# --- Paths & constants ------------------------------------------------------
 
 $RepoRoot    = $PSScriptRoot
 $ComposeDir  = Join-Path $RepoRoot 'compose'
@@ -68,13 +72,13 @@ function Assert-Prereqs {
     }
 }
 
-# ─── Task implementations ────────────────────────────────────────────────────
+# --- Task implementations ---------------------------------------------------
 
 function Show-Help {
 @"
 
-NexusPlatform · local-data-stack · PowerShell runner
-----------------------------------------------------
+NexusPlatform :: local-data-stack :: PowerShell runner
+------------------------------------------------------
 
   .\run.ps1 <task> [-Profile <p>] [-Service <s>]
 
@@ -104,8 +108,8 @@ Examples
 
 function Show-Urls {
     Write-Host ""
-    Write-Host "  NexusPlatform · local-data-stack" -ForegroundColor Cyan
-    Write-Host "  ─────────────────────────────────"
+    Write-Host "  NexusPlatform :: local-data-stack" -ForegroundColor Cyan
+    Write-Host "  ---------------------------------"
     Write-Host "  Grafana           http://127.0.0.1:3000      (admin / admin)"
     Write-Host "  Prometheus        http://127.0.0.1:9090"
     Write-Host "  Jaeger            http://127.0.0.1:16686"
@@ -146,9 +150,9 @@ function Invoke-Health {
     $rows = docker ps --format '{{json .}}' |
             ForEach-Object { $_ | ConvertFrom-Json } |
             Where-Object   { $_.Names -like 'nexus-*' } |
-            Select-Object  @{n='Name';     e={$_.Names}},
-                           @{n='State';    e={$_.State}},
-                           @{n='Status';   e={$_.Status}}
+            Select-Object  @{n='Name';   e={$_.Names}},
+                           @{n='State';  e={$_.State}},
+                           @{n='Status'; e={$_.Status}}
     if (-not $rows) { Write-Host "No nexus-* containers running."; return }
     $rows | Format-Table -AutoSize
 }
@@ -169,10 +173,12 @@ function Invoke-Fmt {
     if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
         throw "npx not found. Install Node.js, then re-run."
     }
-    npx --yes prettier --write "compose/**/*.{yml,yaml,json}"
+    # Quote the glob so PowerShell does not try to expand it.
+    $pattern = 'compose/**/*.{yml,yaml,json}'
+    npx --yes prettier --write $pattern
 }
 
-# ─── Dispatch ────────────────────────────────────────────────────────────────
+# --- Dispatch ---------------------------------------------------------------
 
 Assert-Prereqs
 

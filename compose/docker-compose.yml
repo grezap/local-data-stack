@@ -64,7 +64,7 @@ services:
     logging: *default-logging
     networks: [nexus]
     ports:
-      - "127.0.0.1:9094:9094"    # external host client listener
+      - "127.0.0.1:${KAFKA_EXTERNAL_PORT:-9094}:9094"    # external host client listener
     environment:
       # KRaft: combined broker + controller mode, single node
       KAFKA_NODE_ID: 1
@@ -102,7 +102,7 @@ services:
     depends_on:
       kafka: { condition: service_healthy }
     ports:
-      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:${SCHEMA_REGISTRY_PORT:-8081}:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8081"
@@ -126,8 +126,8 @@ services:
     logging: *default-logging
     networks: [nexus]
     ports:
-      - "127.0.0.1:8123:8123"    # HTTP
-      - "127.0.0.1:9000:9000"    # native TCP
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}:8123"    # HTTP
+      - "127.0.0.1:${CLICKHOUSE_TCP_PORT:-9000}:9000"     # native TCP
     environment:
       CLICKHOUSE_DB: nexus
       CLICKHOUSE_USER: nexus
@@ -155,7 +155,7 @@ services:
     networks: [nexus]
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -177,10 +177,10 @@ services:
     volumes:
       - ./otel/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
     ports:
-      - "127.0.0.1:4317:4317"    # OTLP gRPC
-      - "127.0.0.1:4318:4318"    # OTLP HTTP
-      - "127.0.0.1:8888:8888"    # collector self-metrics
-      - "127.0.0.1:8889:8889"    # prometheus exporter scrape target
+      - "127.0.0.1:${OTLP_GRPC_PORT:-4317}:4317"    # OTLP gRPC
+      - "127.0.0.1:${OTLP_HTTP_PORT:-4318}:4318"    # OTLP HTTP
+      - "127.0.0.1:${OTEL_SELF_METRICS_PORT:-8888}:8888"  # collector self-metrics
+      - "127.0.0.1:${OTEL_PROM_EXPORTER_PORT:-8889}:8889" # prometheus exporter scrape target
     depends_on:
       jaeger:     { condition: service_started }
       seq:        { condition: service_started }
@@ -208,7 +208,7 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     ports:
-      - "127.0.0.1:9090:9090"
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy | grep -q Healthy"]
       interval: 10s
@@ -237,7 +237,7 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
       interval: 10s
@@ -261,7 +261,7 @@ services:
       BADGER_DIRECTORY_VALUE: /badger/data
       BADGER_DIRECTORY_KEY: /badger/key
     ports:
-      - "127.0.0.1:16686:16686"  # Jaeger UI
+      - "127.0.0.1:${JAEGER_UI_PORT:-16686}:16686"  # Jaeger UI
 
   seq:
     image: datalust/seq:${SEQ_VERSION:-2024.3}
@@ -276,4 +276,4 @@ services:
     volumes:
       - seq-data:/data
     ports:
-      - "127.0.0.1:5341:80"      # UI + ingest
+      - "127.0.0.1:${SEQ_PORT:-5341}:80"      # UI + ingest

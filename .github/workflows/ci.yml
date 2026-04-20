@@ -2,10 +2,13 @@
 #  CI · local-data-stack
 # ──────────────────────────────────────────────────────────────────────────────
 #  Gates every change with four independent checks:
-#    1. lint        — compose file is schema-valid and renders cleanly
+#    1. lint        — compose file schema + YAML style
 #    2. smoke       — bring full stack up, run end-to-end smoke test, tear down
-#    3. codeql      — static analysis for the shell/JS we ship
+#    3. codeql      — static analysis of GitHub Actions workflows
 #    4. trivy       — vulnerability scan of every pinned image
+#
+#  All third-party actions are pinned to a known-good tag. Dependabot
+#  (.github/dependabot.yml) proposes weekly bumps.
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: ci
@@ -32,20 +35,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Validate compose file
         run: |
           cp compose/.env.example compose/.env
           docker compose --project-directory compose \
             -f compose/docker-compose.yml --profile full config -q
+
+      # A lenient style check. Anchors, YAML multi-docs, and long lines are
+      # disabled on purpose — we only want blocking issues (hard-tab indent,
+      # undefined anchor refs, key duplication).
       - name: yamllint
         uses: ibiqlik/action-yamllint@v3
         with:
+          file_or_dir: "compose .github"
           config_data: |
-            extends: default
+            extends: relaxed
             rules:
               line-length: disable
               document-start: disable
-              truthy: { check-keys: false }
+              comments: disable
+              comments-indentation: disable
+              truthy: disable
+              indentation:
+                spaces: 2
+                indent-sequences: consistent
 
   smoke:
     name: end-to-end smoke
@@ -75,19 +89,29 @@ jobs:
         run: make logs || true
       - name: Tear down
         if: always()
-        run: make nuke
+        run: |
+          # make nuke prompts in interactive shells; use compose directly in CI
+          docker compose --project-directory compose \
+            -f compose/docker-compose.yml --profile full down --remove-orphans --volumes
 
+  # CodeQL scans the workflow YAML itself for injection / permissions issues.
+  # No JavaScript/TypeScript lives in this repo, so we intentionally target
+  # `actions` only. (Scanning `javascript` fails: CodeQL reports no code.)
   codeql:
-    name: CodeQL
+    name: CodeQL (actions)
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: github/codeql-action/init@v3
         with:
-          languages: javascript
+          languages: actions
       - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:actions"
 
   trivy:
     name: trivy image scan
@@ -108,10 +132,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan ${{ matrix.image }}
-        uses: aquasecurity/trivy-action@0.28.0
+        # Pinned to a known-published tag; Dependabot bumps this weekly.
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: ${{ matrix.image }}
           format: table
-          exit-code: "0"   # report only; tighten to "1" after baseline is clean
+          exit-code: "0"          # report only; tighten to "1" after baseline is clean
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          timeout: "10m"

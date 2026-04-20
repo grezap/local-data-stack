@@ -127,6 +127,8 @@ Copy-Item compose\.env.example compose\.env   # optional; defaults work
 > If PowerShell blocks the script, unblock once with:
 > `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
 > or per-file: `Unblock-File .\run.ps1, .\scripts\smoke.ps1`.
+>
+> **Prefer PowerShell 7+** (install: `winget install --id Microsoft.PowerShell`). The scripts also work on Windows PowerShell 5.1, but PS 7 reads UTF-8 without BOM natively and has better error handling.
 
 Expected on either path: nine containers reporting `healthy` within ~30 s on a warm image cache.
 
@@ -204,7 +206,17 @@ The `Makefile` (POSIX shells) and `run.ps1` (PowerShell 7+) expose the **same ve
 
 **ClickHouse init SQL didn't run.** It only runs on *first* container start against an empty volume. To rerun: `make nuke && make up`.
 
-**Port already in use on 3000 / 9090 / 16686.** Another service on the host owns it. Override via `.env`, e.g. `GRAFANA_PORT=3001`, or free the port.
+**Port already in use (e.g. `Bind for 0.0.0.0:3000 failed: port is already allocated`).** Another process on the host owns that port. Two fixes:
+
+1. **Override the host-side port** in `compose/.env`. Every service's host port is parameterized — see `compose/.env.example` for the full list:
+   ```
+   GRAFANA_PORT=3001
+   PROMETHEUS_PORT=9091
+   JAEGER_UI_PORT=16687
+   ```
+   Then `make down && make up` (or `.\run.ps1 down; .\run.ps1 up`).
+
+2. **Find and stop the squatter.** On Windows: `Get-NetTCPConnection -LocalPort 3000 | Select OwningProcess,State` then `Get-Process -Id <pid>`. On Linux/macOS: `lsof -i :3000` or `sudo ss -lptn 'sport = :3000'`. Common culprits: another Grafana, `node` dev server, a leftover stopped container (`docker ps -a | grep 3000`).
 
 **Windows: `run.ps1 : File cannot be loaded because running scripts is disabled`.** One-time fix:
 `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`. Per-file: `Unblock-File .\run.ps1`.
@@ -212,6 +224,8 @@ The `Makefile` (POSIX shells) and `run.ps1` (PowerShell 7+) expose the **same ve
 **Windows: `docker : The term 'docker' is not recognized`.** Docker Desktop is not installed or not on `PATH`. Install from docker.com, reboot, and ensure WSL2 integration is enabled in Docker Desktop → Settings → Resources → WSL Integration.
 
 **Windows: `bash\r: No such file or directory` when running `smoke.sh` in WSL.** The shell script was checked out with CRLF line endings. Fix: `git config --global core.autocrlf input` then `git checkout -- scripts/smoke.sh`. The repo's `.gitattributes` forces LF on `*.sh` — you should only see this if you bypassed it.
+
+**Windows PS 5.1: `Missing argument in parameter list` when running `.\run.ps1`.** Windows PowerShell 5.1 reads `.ps1` files as ANSI (cp1252) unless they have a UTF-8 BOM. The shipped scripts are pure ASCII to avoid this entirely — if you see this, it means the file was modified and non-ASCII characters (em-dash, box drawing, smart quotes) were introduced. Fix: keep `run.ps1` and `scripts/smoke.ps1` ASCII-only, or switch to PowerShell 7 (`winget install --id Microsoft.PowerShell`).
 
 ## Roadmap
 
