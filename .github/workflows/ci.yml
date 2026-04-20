@@ -34,7 +34,7 @@ jobs:
     name: compose lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Validate compose file
         run: |
@@ -67,7 +67,7 @@ jobs:
     timeout-minutes: 20
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Prepare environment
         run: cp compose/.env.example compose/.env
       - name: Bring up full stack
@@ -105,7 +105,7 @@ jobs:
       security-events: write
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: github/codeql-action/init@v3
         with:
           languages: actions
@@ -130,7 +130,7 @@ jobs:
           - jaegertracing/jaeger:2.0.0
           - datalust/seq:2024.3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Scan ${{ matrix.image }}
         # Pinned to a known-published tag; Dependabot bumps this weekly.
         uses: aquasecurity/trivy-action@0.24.0
