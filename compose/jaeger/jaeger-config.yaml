@@ -1,0 +1,56 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  Jaeger v2 config · OTLP-native, memory storage (dev-only)
+# ──────────────────────────────────────────────────────────────────────────────
+#  Jaeger v2 is an OTel Collector distribution. The default baked-in config
+#  binds OTLP to localhost, so nothing on the docker network can reach it.
+#  This config binds to 0.0.0.0 so the otel-collector can forward traces here.
+# ──────────────────────────────────────────────────────────────────────────────
+
+service:
+  extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: normal
+      address: 0.0.0.0:8888
+
+extensions:
+  healthcheckv2:
+    use_v2: true
+    http:
+      endpoint: 0.0.0.0:13133
+
+  jaeger_query:
+    storage:
+      traces: some_storage
+    http:
+      endpoint: 0.0.0.0:16686
+    grpc:
+      endpoint: 0.0.0.0:16685
+
+  jaeger_storage:
+    backends:
+      some_storage:
+        memory:
+          max_traces: 100000
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: some_storage

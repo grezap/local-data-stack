@@ -184,12 +184,9 @@ services:
     depends_on:
       jaeger:     { condition: service_started }
       seq:        { condition: service_started }
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:13133/ || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
+    # No healthcheck: the contrib image is distroless (no shell, no wget).
+    # The health_check extension still listens on :13133 for humans/debugging;
+    # downstream services use `service_started` rather than `service_healthy`.
 
   prometheus:
     image: prom/prometheus:${PROMETHEUS_VERSION:-v3.0.1}
@@ -232,6 +229,9 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Plugins referenced by provisioning/datasources/datasources.yml.
+      # Installed on first boot; cached in the grafana-data volume thereafter.
+      GF_INSTALL_PLUGINS: "grafana-opensearch-datasource,grafana-clickhouse-datasource"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -241,9 +241,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
       interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 60s    # first boot installs plugins over the network
 
   jaeger:
     # Jaeger v2 is OTel-native — removes the need for a separate jaeger-agent.
@@ -253,13 +253,10 @@ services:
     <<: *default-restart
     logging: *default-logging
     networks: [nexus]
+    command: ["--config", "/etc/jaeger/jaeger-config.yaml"]
     volumes:
-      - jaeger-data:/badger
-    environment:
-      SPAN_STORAGE_TYPE: badger
-      BADGER_EPHEMERAL: "false"
-      BADGER_DIRECTORY_VALUE: /badger/data
-      BADGER_DIRECTORY_KEY: /badger/key
+      - ./jaeger/jaeger-config.yaml:/etc/jaeger/jaeger-config.yaml:ro
+      - jaeger-data:/tmp/jaeger   # reserved for future persistent storage
     ports:
       - "127.0.0.1:${JAEGER_UI_PORT:-16686}:16686"  # Jaeger UI
 

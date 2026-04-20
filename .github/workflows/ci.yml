@@ -74,7 +74,7 @@ jobs:
         run: make up P=full
       - name: Wait for healthy
         run: |
-          for i in {1..60}; do
+          for i in {1..90}; do
             bad=$(docker ps --format '{{.Names}} {{.Status}}' | grep -c '(unhealthy)') || true
             pending=$(docker ps --format '{{.Names}} {{.Status}}' | grep -c 'health: starting') || true
             if [[ "$bad" == 0 && "$pending" == 0 ]]; then echo "all healthy"; exit 0; fi
