@@ -133,7 +133,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Scan ${{ matrix.image }}
         # Pinned to a known-published tag; Dependabot bumps this weekly.
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ matrix.image }}
           format: table
