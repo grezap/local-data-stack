@@ -7,7 +7,9 @@
 ![compose](https://img.shields.io/badge/docker--compose-v2-informational)
 ![platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows--wsl2-lightgrey)
 
-One `make up` brings up Kafka (KRaft), Schema Registry, ClickHouse, Redis, Prometheus, Grafana, Jaeger v2, Seq, and an OpenTelemetry Collector acting as the single telemetry hub. Every application project in the NexusPlatform portfolio targets this stack unchanged.
+One `make up` brings up Kafka (KRaft), Schema Registry, ClickHouse, Redis, Prometheus, Grafana, Jaeger v2, Seq, and an OpenTelemetry Collector acting as the single telemetry hub. This is the **single-host, docker-compose dev substrate** (Tier-0) for NexusPlatform application projects.
+
+> **Relationship to NexusPlatform.** `local-data-stack` is the **Tier-0 dev substrate** — one host, docker-compose, fast inner loop. Its **production evolution is the multi-host VMware lab** in the `nexus-infra-*` repos (140 VMs across foundation → orchestration → Kafka → OLTP → analytics → lakehouse → registry → observability → sharding, provisioned with Packer + Terraform, orchestrated with Docker Swarm + Nomad + Consul, secured with Vault-PKI mTLS, and driven by the `nexus-cli` operator binary). Develop against this stack; deploy against the lab. The two share the same engines (Kafka/ClickHouse/Redis/OTel/Grafana) so a project runs on both.
 
 ---
 
@@ -234,7 +236,7 @@ The `Makefile` (POSIX shells) and `run.ps1` (PowerShell 7+) expose the **same ve
 | v0.1.0  | ✅ Core nine-service stack, profiles, OTel hub, smoke test, CI                         |
 | v0.2.0  | JMX receiver for Kafka metrics, alerting rules, Loki (optional), Tempo evaluation     |
 | v0.3.0  | Swarm overlay (multi-host), mTLS between services, secrets via Docker secrets         |
-| v1.0.0  | Nomad + Consul deployment variant, Packer VM image, Terraform stand-up on vSphere     |
+| v1.0.0  | Nomad + Consul deployment variant, Packer VM image, Terraform stand-up — ✅ **realized as the multi-host VMware lab** (`nexus-infra-*`: Packer + Terraform + Swarm/Nomad/Consul + Vault, 140 VMs). This repo stays the Tier-0 single-host dev substrate. |
 
 ## Contributing
 
